@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy identity provider
+
+Parameters:
+  LoadBalancerSecurityGroup:
+    MinLength: 1
+    Description: The security group for the load balancer.
+    Type: String
+  ApplicationImageTag:
+    MinLength: 1
+    Description: The tag from which to pull the app image
+    Type: String
+  NetworkServiceSubnets:
+    Description: The subnets to which the load balancer attaches.
+    Type: String
+  Cluster:
+    MinLength: 1
+    Description: The ECS cluster for container deployment
+    Type: String
+  Env:
+    MinLength: 1
+    Description: The name of environment
+    Type: String
+  Vpc:
+    Description: The application's VPC
+    Type: String
+    MinLength: 1
+  HostSecurityGroup:
+    Description: The container hosts' security group
+    Type: String
+    MinLength: 1
+
+Resources:
+  LoadBalancer:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/matryoshka-template-store/application-load-balancer-for-containers_v1.yaml
+      Parameters:
+        Vpc: !Ref Vpc
+        LoadBalancerSecurityGroup: !Ref LoadBalancerSecurityGroup
+        NetworkServiceSubnets: !Ref NetworkServiceSubnets
+        LoadBalancerName: hello-world
+        HostSecurityGroup: !Ref HostSecurityGroup
+        Protocol: HTTP
+
+  Service:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/matryoshka-template-store/container-service_v1.yaml
+      Parameters:
+        ContainerName: hello-world
+        ContainerPort: 8000
+        TaskDefinition: !Ref Task
+        LoadBalancer: !Ref LoadBalancer
+        Cluster: !Ref Cluster
+        TargetGroup: !GetAtt LoadBalancer.Outputs.TargetGroup
+
+  Domain:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: ZZCW5RQ81QPV3
+      AliasTarget:
+        HostedZoneId: !GetAtt LoadBalancer.Outputs.CanonicalHostedZoneID
+        DNSName: !GetAtt LoadBalancer.Outputs.DNSName
+      Name: !Sub ${Env}-hello-world.d.cjpowered.com
+      Type: A
+
+  Task:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+      - Image: !Sub 114272735376.dkr.ecr.us-east-1.amazonaws.com/hello-world:${ApplicationImageTag}
+        PortMappings:
+        - ContainerPort: 8000
+          HostPort: 0
+        Name: hello-world
+        Memory: 128
+        Cpu: 200
+      Family: !Sub ${Env}-hello-world
+
+Outputs:
+  Service:
+    Value: !Ref Service
+  LoadBalancer:
+    Value: !Ref LoadBalancer
+  Domain:
+    Value: !Ref Domain
